@@ -230,7 +230,8 @@
     </actuator>
 
     <sensor>
-      <jointlimitfrc name="abdomen_x_limitfrc" joint="abdomen_x"/>
+        <!-- joint limitfrc not supported by mujoco.mjx -->
+      <!-- <jointlimitfrc name="abdomen_x_limitfrc" joint="abdomen_x"/>
       <jointlimitfrc name="abdomen_y_limitfrc" joint="abdomen_y"/>
       <jointlimitfrc name="abdomen_z_limitfrc" joint="abdomen_z"/>
       <jointlimitfrc name="hip_x_right_limitfrc" joint="hip_x_right"/>
@@ -250,7 +251,7 @@
       <jointlimitfrc name="elbow_right_limitfrc" joint="elbow_right"/>
       <jointlimitfrc name="shoulder1_left_limitfrc" joint="shoulder1_left"/>
       <jointlimitfrc name="shoulder2_left_limitfrc" joint="shoulder2_left"/>
-      <jointlimitfrc name="elbow_left_limitfrc" joint="elbow_left"/>
+      <jointlimitfrc name="elbow_left_limitfrc" joint="elbow_left"/> -->
 
       <!-- Touch sensors for feet (contact magnitude at sites) -->
       <touch name="touch_foot_right" site="site_foot_right"/>
