@@ -14,7 +14,11 @@
 -->
 
 <mujoco model="Humanoid">
-    <option timestep="0.005"/>
+    <option timestep="0.005" solver="Newton" integrator="implicitfast" iterations="10" ls_iterations="20" jacobian="dense">
+      <flag eulerdamp="disable"/>
+    </option>
+    <size nstack="6000" nconmax="8" njmax="100"/>
+
   
     <visual>
       <map force="0.01" zfar="30"/>
@@ -254,8 +258,8 @@
       <jointlimitfrc name="elbow_left_limitfrc" joint="elbow_left"/> -->
 
       <!-- Touch sensors for feet (contact magnitude at sites) -->
-      <!-- <touch name="touch_foot_right" site="site_foot_right"/>
-      <touch name="touch_foot_left" site="site_foot_left"/> -->
+      <touch name="touch_foot_right" site="site_foot_right"/>
+      <touch name="touch_foot_left" site="site_foot_left"/>
 
 
     </sensor>

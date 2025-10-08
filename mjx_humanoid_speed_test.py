@@ -35,6 +35,28 @@ def build_models_from_source(kind: str):
 
     print("model.opt.iterations:", model.opt.iterations)
     print("model.opt.ls_iterations:", model.opt.ls_iterations)
+    print("model.opt.solver:", model.opt.solver)
+    if model.opt.solver == mujoco.mjtSolver.mjSOL_NEWTON:
+        print("solver: NEWTON")
+    elif model.opt.solver == mujoco.mjtSolver.mjSOL_PGS:
+        print("solver: PGS")
+    elif model.opt.solver == mujoco.mjtSolver.mjSOL_PGS_NOFORCE:
+        print("solver: PGS_NOFORCE")
+    else:
+        print("solver: UNKNOWN")
+    if model.opt.integrator == mujoco.mjtIntegrator.mjINT_EULER:
+        print("integrator: EULER")
+    elif model.opt.integrator == mujoco.mjtIntegrator.mjINT_RK4:
+        print("integrator: RK4")
+    elif model.opt.integrator == mujoco.mjtIntegrator.mjINT_IMPLICIT:
+        print("integrator: IMPLICIT")
+    elif model.opt.integrator == mujoco.mjtIntegrator.mjINT_IMPLICITFAST:
+        print("integrator: IMPLICITFAST")
+    else:
+        print("integrator: UNKNOWN")
+    # print("model.opt.integrator:", model.opt.integrator)
+    print("model.opt.jacobian:", model.opt.jacobian)
+    print("model.opt.timestep:", model.opt.timestep)
     mjx_model = mjx.put_model(model)
     return model, mjx_model
 
