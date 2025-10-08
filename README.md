@@ -32,7 +32,8 @@ pip install -U pip setuptools wheel
 pip install mujoco-mjx
 pip install matplotlib
 pip install -U "jax[cuda12]"
-# pip install jaxlib
+pip install optax
+pip install warp-lang
 ```
 
 
