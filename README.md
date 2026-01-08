@@ -34,6 +34,7 @@ pip install matplotlib
 pip install -U "jax[cuda12]"
 pip install optax
 pip install warp-lang
+pip install imageio[ffmpeg]
 ```
 
 
@@ -43,3 +44,19 @@ pip install warp-lang
     ```
     watch -n 0.5 nvidia-smi
     ```
+
+# Execute
+
+```bash
+wsl
+source .venv/bin/activate
+```
+
+## speed test
+```bash
+python mjx_humanoid_speed_test.py
+```
+## rendering
+```bash
+python mjx_rendering.py
+```

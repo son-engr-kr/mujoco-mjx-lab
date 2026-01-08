@@ -12,11 +12,13 @@ import mujoco
 import mujoco.mjx as mjx
 
 
-
 def build_models_from_source(kind: str):
+    """Load and convert MuJoCo models to MJX."""
     if kind == "humanoid":
+        # Standard humanoid (Newton solver, heavier)
         model = mujoco.MjModel.from_xml_path("models/humanoid.xml")
     elif kind == "humanoid_mjx":
+        # Optimized for MJX (PGS/Implicit solver, faster on GPU)
         model = mujoco.MjModel.from_xml_path("models/humanoid_mjx.xml")
     elif kind == "sphere":
         XML = r"""
@@ -33,35 +35,12 @@ def build_models_from_source(kind: str):
     else:
         raise ValueError(f"unknown kind: {kind}")
 
-    print("model.opt.iterations:", model.opt.iterations)
-    print("model.opt.ls_iterations:", model.opt.ls_iterations)
-    print("model.opt.solver:", model.opt.solver)
-    if model.opt.solver == mujoco.mjtSolver.mjSOL_NEWTON:
-        print("solver: NEWTON")
-    elif model.opt.solver == mujoco.mjtSolver.mjSOL_PGS:
-        print("solver: PGS")
-    elif model.opt.solver == mujoco.mjtSolver.mjSOL_PGS_NOFORCE:
-        print("solver: PGS_NOFORCE")
-    else:
-        print("solver: UNKNOWN")
-    if model.opt.integrator == mujoco.mjtIntegrator.mjINT_EULER:
-        print("integrator: EULER")
-    elif model.opt.integrator == mujoco.mjtIntegrator.mjINT_RK4:
-        print("integrator: RK4")
-    elif model.opt.integrator == mujoco.mjtIntegrator.mjINT_IMPLICIT:
-        print("integrator: IMPLICIT")
-    elif model.opt.integrator == mujoco.mjtIntegrator.mjINT_IMPLICITFAST:
-        print("integrator: IMPLICITFAST")
-    else:
-        print("integrator: UNKNOWN")
-    # print("model.opt.integrator:", model.opt.integrator)
-    print("model.opt.jacobian:", model.opt.jacobian)
-    print("model.opt.timestep:", model.opt.timestep)
     mjx_model = mjx.put_model(model)
     return model, mjx_model
 
 
 def make_batched_step(mjx_model):
+    """Create a JIT-compiled batched step function."""
     def step(vel):
         d = mjx.make_data(mjx_model)
         qvel = d.qvel.at[0].set(vel)
@@ -73,60 +52,85 @@ def make_batched_step(mjx_model):
 
 
 def bench_once(kind: str, batch_size: int = 1000, iters: int = 200):
-    _, mjx_model = build_models_from_source(kind)
-
-    print("JAX backend:", jax.default_backend())
+    model, mjx_model = build_models_from_source(kind)
 
     # Input batch
     vel = jnp.linspace(0.0, 1.0, batch_size)
 
-    # build per-model compiled kernel (no global capture)
+    # Step function (compiled)
     fn = make_batched_step(mjx_model)
 
-    # warmup
-    t0 = time.time()
+    # Warmup step function
+    # This triggers JIT compilation for the single-step function
     pos = fn(vel)
     pos.block_until_ready()
-    warmup_dt = max(time.time() - t0, 1e-12)
-    print("sample pos[0..4]:", jnp.asarray(pos[:5]))
-    print("warmup time (s):", f"{warmup_dt:.6f}")
 
-    # python-loop timing
-    t1 = time.time()
+    # --- Benchmark Python Loop ---
+    # Running step() one by one from Python.
+    # This incurs Python-to-GPU dispatch overhead every step.
+    t_start = time.time()
     for _ in range(iters):
         out = fn(vel)
         out.block_until_ready()
-    t2 = time.time()
-    dt_py = max(t2 - t1, 1e-12)
+    t_end = time.time()
+    dt_py = max(t_end - t_start, 1e-12)
 
-    # device-loop timing via fori_loop
+    # --- Benchmark Device Loop ---
+    # Using jax.lax.while_loop/fori_loop to keep execution on GPU.
+    # This is how you typically train agents (rollouts on GPU).
+    
     @jax.jit
-    def repeat_on_device(vel, iters):
+    def repeat_on_device(vel, count):
         def body(i, acc):
             p = fn(vel)
-            return acc + jnp.sum(p)  # DCE guard
-        return jax.lax.fori_loop(0, iters, body, 0.0)
+            return acc + jnp.sum(p)  # Dummy accumulation to prevent DCE
+        return jax.lax.fori_loop(0, count, body, 0.0)
 
-    t3 = time.time()
+    # Warmup device loop (triggers JIT compilation for the loop)
+    # CRITICAL: Previous code included this in the timing!
+    _ = repeat_on_device(vel, 1).block_until_ready()
+
+    # Measure actual execution
+    t_start = time.time()
     _ = repeat_on_device(vel, iters).block_until_ready()
-    t4 = time.time()
-    dt_dev = max(t4 - t3, 1e-12)
+    t_end = time.time()
+    dt_dev = max(t_end - t_start, 1e-12)
 
-    steps = int(batch_size) * iters
-    sps_py = steps / dt_py
-    sps_dev = steps / dt_dev
+    # Calculate stats
+    steps_total = batch_size * iters
+    sps_py = steps_total / dt_py
+    sps_dev = steps_total / dt_dev
 
-    print(f"[{kind}] batch size:", batch_size)
-    print(f"[{kind}] iterations:", iters)
-    print(f"[{kind}] elapsed python-loop (s):", f"{dt_py:.6f}")
-    print(f"[{kind}] env-steps/s python-loop:", f"{sps_py:.1f}")
-    print(f"[{kind}] elapsed device-loop (s):", f"{dt_dev:.6f}")
-    print(f"[{kind}] env-steps/s device-loop:", f"{sps_dev:.1f}")
+    # --- Report Results ---
+    print(f"\nModel: {kind.upper()}")
+    print("-" * 60)
+    print(f"{'Metric':<30} | {'Value':<15}")
+    print("-" * 60)
+    print(f"{'Batch Size':<30} | {batch_size}")
+    print(f"{'Iterations':<30} | {iters}")
+    print(f"{'Total Steps':<30} | {steps_total:,}")
+    print("-" * 60)
+    print(f"{'Python Loop Time (s)':<30} | {dt_py:.4f}")
+    print(f"{'Python Steps/Sec':<30} | {sps_py:,.0f}")
+    print("-" * 60)
+    print(f"{'Device Loop Time (s)':<30} | {dt_dev:.4f}")
+    print(f"{'Device Steps/Sec':<30} | {sps_dev:,.0f} (Running entirely on GPU)")
+    print("-" * 60)
+    if sps_dev > sps_py:
+        speedup = sps_dev / sps_py
+        print(f"Speedup (Device vs Python)    | {speedup:.1f}x")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
-    bench_once("humanoid", batch_size=10000, iters=50)
-    bench_once("humanoid_mjx", batch_size=10000, iters=50)
-    bench_once("sphere", batch_size=10000, iters=50)
-
-
+    print("JAX Backend:", jax.default_backend())
+    print("Starting Speed Benchmark...")
+    print("Note: 'Device Steps/Sec' is the metric to look at for training performance.")
+    
+    # Using larger iterations to get more stable measurements
+    # Note: 'humanoid' has stricter contact config and uses Newton solver = slower
+    # 'humanoid_mjx' is optimized for XLA with different solver params = faster
+    
+    bench_once("humanoid", batch_size=4096, iters=100)
+    bench_once("humanoid_mjx", batch_size=4096, iters=100)
+    bench_once("sphere", batch_size=4096, iters=100)
