@@ -131,6 +131,6 @@ if __name__ == "__main__":
     # Note: 'humanoid' has stricter contact config and uses Newton solver = slower
     # 'humanoid_mjx' is optimized for XLA with different solver params = faster
     
-    bench_once("humanoid", batch_size=4096, iters=100)
-    bench_once("humanoid_mjx", batch_size=4096, iters=100)
-    bench_once("sphere", batch_size=4096, iters=100)
+    bench_once("humanoid", batch_size=4096, iters=10)
+    bench_once("humanoid_mjx", batch_size=4096, iters=10)
+    bench_once("sphere", batch_size=4096, iters=10)
