@@ -8,7 +8,7 @@ from typing import List, Tuple, Optional
 @dataclass
 class BaseConfig:
     # Model
-    xml_path: str = "models/humanoid.xml"
+    xml_path: str = "models/humanoid_mjx.xml"
     lighten_solver: bool = False
     
     # Rendering
