@@ -133,15 +133,15 @@
               <joint name="hip_x_right" axis="1 0 0" class="hip_x"/>
               <joint name="hip_z_right" axis="0 0 1" class="hip_z"/>
               <joint name="hip_y_right" class="hip_y"/>
-              <geom name="thigh_right" fromto="0 0 0 0 .01 -.34" class="thigh"/>
+              <geom name="thigh_right" fromto="0 0 0 0 .01 -.34" class="thigh" contype="4" conaffinity="3"/>
               <body name="shin_right" pos="0 .01 -.4">
                 <joint name="knee_right" class="knee"/>
-                <geom name="shin_right" class="shin"/>
+                <geom name="shin_right" class="shin" contype="4" conaffinity="3"/>
                 <body name="foot_right" pos="0 0 -.39">
                   <joint name="ankle_y_right" class="ankle_y"/>
                   <joint name="ankle_x_right" class="ankle_x" axis="1 0 .5"/>
-                  <geom name="foot1_right" class="foot1"/>
-                  <geom name="foot2_right" class="foot2"/>
+                  <geom name="foot1_right" class="foot1" contype="4" conaffinity="3"/>
+                  <geom name="foot2_right" class="foot2" contype="4" conaffinity="3"/>
                   <site name="site_foot_right" pos="0.036 0 -0.013" size="0.135 0.06 0.02" type="box" rgba="1 0 0 0.2" group="3"/>
 
                 </body>
@@ -151,15 +151,15 @@
               <joint name="hip_x_left" axis="-1 0 0" class="hip_x"/>
               <joint name="hip_z_left" axis="0 0 -1" class="hip_z"/>
               <joint name="hip_y_left" class="hip_y"/>
-              <geom name="thigh_left" fromto="0 0 0 0 -.01 -.34" class="thigh"/>
+              <geom name="thigh_left" fromto="0 0 0 0 -.01 -.34" class="thigh" contype="2" conaffinity="5"/>
               <body name="shin_left" pos="0 -.01 -.4">
                 <joint name="knee_left" class="knee"/>
-                <geom name="shin_left" fromto="0 0 0 0 0 -.3" class="shin"/>
+                <geom name="shin_left" fromto="0 0 0 0 0 -.3" class="shin" contype="2" conaffinity="5"/>
                 <body name="foot_left" pos="0 0 -.39">
                   <joint name="ankle_y_left" class="ankle_y"/>
                   <joint name="ankle_x_left" class="ankle_x" axis="-1 0 -.5"/>
-                  <geom name="foot1_left" class="foot1"/>
-                  <geom name="foot2_left" class="foot2"/>
+                  <geom name="foot1_left" class="foot1" contype="2" conaffinity="5"/>
+                  <geom name="foot2_left" class="foot2" contype="2" conaffinity="5"/>
                   <site name="site_foot_left" pos="0.036 0 -0.013" size="0.135 0.06 0.02" type="box" rgba="1 0 0 0.2" group="3"/>
                 </body>
               </body>
