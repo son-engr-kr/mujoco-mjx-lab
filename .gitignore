@@ -134,3 +134,20 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# ==================== Project Specific ====================
+# Training results (checkpoints, videos, logs)
+results/
+
+# Rendered videos
+*.mp4
+*.avi
+*.mov
+
+# Training checkpoints
+*.pkl
+*.pth
+*.pt
+
+# Logs
+*.jsonl

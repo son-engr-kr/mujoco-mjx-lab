@@ -17,7 +17,7 @@
     <option timestep="0.005" solver="Newton" integrator="implicitfast" iterations="10" ls_iterations="20" jacobian="dense">
       <flag eulerdamp="disable"/>
     </option>
-    <size nstack="6000" nconmax="8" njmax="100"/>
+    <size memory="100M"/>
 
   
     <visual>
