@@ -69,6 +69,7 @@ def setup_jax_environment():
 
 def load_model_and_create_env(
     xml_path: str,
+    env_config: Any,
     lighten_solver: bool = False,
     solver_options: Dict[str, Any] = None
 ) -> Tuple[mujoco.MjModel, mjx.Model, np.ndarray, int, int, int, Callable, Callable, Callable, Callable]:
@@ -95,7 +96,7 @@ def load_model_and_create_env(
     print(f"Model dims: nq={nq}, nv={nv}, nu={nu}")
     
     # Create environment functions using the new envs module
-    single_reset, single_step, v_reset, v_step = create_env_functions(sys, q0, nq, nv)
+    single_reset, single_step, v_reset, v_step = create_env_functions(sys, env_config, q0, nq, nv)
     
     return m, sys, q0, nq, nv, nu, single_reset, single_step, v_reset, v_step
 
@@ -164,7 +165,9 @@ class TrainingLogger:
         params,
         policy_fn: Callable,
         q0: np.ndarray,
-        filename_prefix: str = "step"
+        filename_prefix: str = "step",
+        env_step_fn=None,
+        env_init_fn=None
     ):
         """Render a video of the current policy."""
         # Handle both dataclass and dict config
@@ -185,7 +188,9 @@ class TrainingLogger:
             duration=duration,
             fps=fps,
             q0=q0,
-            camera_name=camera_name
+            camera_name=camera_name,
+            env_step_fn=env_step_fn,
+            env_init_fn=env_init_fn
         )
     
     def print_final_summary(self):

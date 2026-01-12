@@ -105,8 +105,19 @@ python train_apg.py
 - Renders videos every 100 iterations
 
 ### PPO (Proximal Policy Optimization)
+To train the agent using PPO with default configuration:
 ```bash
 python train_ppo.py
+```
+
+To run a fast test/debug session (using `src/config_test.json`):
+```bash
+python train_ppo.py --test
+```
+
+To use a specific config file:
+```bash
+python train_ppo.py --config path/to/config.json
 ```
 - Num envs: 1024
 - Rollout length: 256 steps

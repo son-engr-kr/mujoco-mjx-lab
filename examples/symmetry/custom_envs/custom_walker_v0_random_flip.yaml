@@ -1,0 +1,251 @@
+# CustomWalker-v0 configuration with random left-right flipping
+#
+# Observation layout (CustomWalkerEnv):
+#   obs = [ height, roll, pitch, yaw, joint_pos(21), qvel(27), target_feat(2) ]
+#   - height               : pelvis z (from pelvis body position)
+#   - roll, pitch, yaw     : derived from pelvis body quaternion (w,x,y,z)
+#   - joint_pos            : after the free joint, in model joint order (21)
+#   - qvel                 : pelvis body velocities (6 DOF) + 21 hinge velocities
+#
+# Joint order (after free root, 21 hinge joints) from humanoid.xml:
+#   0  abdomen_z           (hinge, z)
+#   1  abdomen_y           (hinge, y)
+#   2  abdomen_x           (hinge, x)
+#   3  hip_x_right         (hinge, x)
+#   4  hip_z_right         (hinge, z)
+#   5  hip_y_right         (hinge, y)
+#   6  knee_right          (hinge, y)
+#   7  ankle_y_right       (hinge, y)
+#   8  ankle_x_right       (hinge, x)
+#   9  hip_x_left          (hinge, x)
+#   10 hip_z_left          (hinge, z)
+#   11 hip_y_left          (hinge, y)
+#   12 knee_left           (hinge, y)
+#   13 ankle_y_left        (hinge, y)
+#   14 ankle_x_left        (hinge, x)
+#   15 shoulder1_right     (hinge)
+#   16 shoulder2_right     (hinge)
+#   17 elbow_right         (hinge)
+#   18 shoulder1_left      (hinge)
+#   19 shoulder2_left      (hinge)
+#   20 elbow_left          (hinge)
+#
+# Index map in obs (0-based):
+#   0      height (pelvis z)
+#   1..3   roll, pitch, yaw (pelvis orientation)
+#   4..24  joint_pos (order as above)
+#   25..27 pelvis linear velocities  (x, y, z)  ← pelvis body vel: pos3 first
+#   28..30 pelvis angular velocities (x, y, z)  ← then rotation3
+#   31..51 hinge angular velocities (order as above)
+#   52..53 target features (egocentric): softsign(dist)*[sin(angle), cos(angle)]
+
+env:
+  id: "CustomWalker-v0"
+  render_mode: null
+  make_kwargs:
+    max_episode_steps: 600
+    # Reward parameters
+    progress_weight: 1.0
+    electricity_cost: 0.026 # should we actually reduce it to prevent rigid knee?
+    stall_torque_cost: 0.0000023 #0.000081
+    tall_height_threshold: 0.7
+    tall_bonus_weight: 0.0
+    target_threshold: 0.15
+    target_dist: 2.0
+    stop_frames: 1
+    joints_at_limit_cost: 5.0 #3.3435
+    posture_penalty_weight: 0.60
+    terminate_height: 0.7
+    terminate_reward: 0.0
+    stance_time_reward_weight: 0.0
+    # Random initial pose parameters
+    random_joint_noise: 0.01
+    random_vel_noise: 0.01
+    initial_velocity_max: 0.5
+    # Joint-limit sensing
+    joint_limit_force_threshold: 6.5
+    limit_sensor_names:
+      - abdomen_x_limitfrc
+      - abdomen_y_limitfrc
+      - abdomen_z_limitfrc
+      - hip_x_right_limitfrc
+      - hip_z_right_limitfrc
+      - hip_y_right_limitfrc
+      - knee_right_limitfrc
+      - ankle_y_right_limitfrc
+      - ankle_x_right_limitfrc
+      - hip_x_left_limitfrc
+      - hip_z_left_limitfrc
+      - hip_y_left_limitfrc
+      - knee_left_limitfrc
+      - ankle_y_left_limitfrc
+      - ankle_x_left_limitfrc
+      - shoulder1_right_limitfrc
+      - shoulder2_right_limitfrc
+      - elbow_right_limitfrc
+      - shoulder1_left_limitfrc
+      - shoulder2_left_limitfrc
+      - elbow_left_limitfrc
+
+  symmetry:
+    method: "random_flip"
+    params:
+      scheduler: "constant"
+      constant_value: 0.5
+    flip_params:
+      # Action space (21 actuators, same order as joints above)
+      action_index_info:
+        right: [3,4,5,6,7,8,15,16,17]
+        left:  [9,10,11,12,13,14,18,19,20]
+        # Only torso x/z (abdomen_z, abdomen_x) negate; limbs swap without sign change
+        negative_sign: [0,2]
+
+        # Full action index table (0-based)
+        # | idx | actuator/joint     | axis | mirror action |
+        # |----:|--------------------|------|---------------|
+        # |  0  | abdomen_z          |  z   | negate        |
+        # |  1  | abdomen_y          |  y   | keep          |
+        # |  2  | abdomen_x          |  x   | negate        |
+        # |  3  | hip_x_right        |  x   | keep          |
+        # |  4  | hip_z_right        |  z   | keep          |
+        # |  5  | hip_y_right        |  y   | keep          |
+        # |  6  | knee_right         |  y   | keep          |
+        # |  7  | ankle_y_right      |  y   | keep          |
+        # |  8  | ankle_x_right      |  x   | keep          |
+        # |  9  | hip_x_left         |  x   | keep          |
+        # | 10  | hip_z_left         |  z   | keep          |
+        # | 11  | hip_y_left         |  y   | keep          |
+        # | 12  | knee_left          |  y   | keep          |
+        # | 13  | ankle_y_left       |  y   | keep          |
+        # | 14  | ankle_x_left       |  x   | keep          |
+        # | 15  | shoulder1_right    |  -   | keep          |
+        # | 16  | shoulder2_right    |  -   | keep          |
+        # | 17  | elbow_right        |  -   | keep          |
+        # | 18  | shoulder1_left     |  -   | keep          |
+        # | 19  | shoulder2_left     |  -   | keep          |
+        # | 20  | elbow_left         |  -   | keep          |
+        # Swap sets (mirror): right -> left, left -> right
+        #   right: [3,4,5,6,7,8,15,16,17]
+        #   left : [9,10,11,12,13,14,18,19,20]
+
+      # Observation indices to swap/negate under mirroring
+      # Right/Left include both joint positions and their velocities
+      observation_index_info:
+        # joint_pos: right (7..12,19..21) <-> left (13..18,22..24)
+        right: [7,8,9,10,11,12,19,20,21, 34,35,36,37,38,39,46,47,48]
+        left:  [13,14,15,16,17,18,22,23,24, 40,41,42,43,44,45,49,50,51]
+        # Negate only features that flip under LR mirror:
+        #   roll(1), yaw(3), abdomen_z pos(4), abdomen_x pos(6),
+        #   vy(26), pelvis ang vel x(28), z(30), abdomen_z vel(31), abdomen_x vel(33),
+        #   target_sin(52) only (cos는 유지)
+        negative_sign: [1,3,4,6,26,28,30,31,33,52]
+
+        # Full observation index table (0-based) with mirror behavior
+        # 0   height = pelvis z (pelvis body position)       | mirror: keep
+        # 1   roll (pelvis orientation)                     | mirror: negate
+        # 2   pitch (pelvis orientation)                    | mirror: keep
+        # 3   yaw (pelvis orientation)                      | mirror: negate
+        # 4   abdomen_z (pos)                                | mirror: negate
+        # 5   abdomen_y (pos)                                | mirror: keep
+        # 6   abdomen_x (pos)                                | mirror: negate
+        # 7   hip_x_right (pos)                              | mirror: swap<->13 keep
+        # 8   hip_z_right (pos)                              | mirror: swap<->14 keep
+        # 9   hip_y_right (pos)                              | mirror: swap<->15 keep
+        # 10  knee_right (pos)                               | mirror: swap<->16 keep
+        # 11  ankle_y_right (pos)                            | mirror: swap<->17 keep
+        # 12  ankle_x_right (pos)                            | mirror: swap<->18 keep
+        # 13  hip_x_left (pos)                               | mirror: swap<->7 keep
+        # 14  hip_z_left (pos)                               | mirror: swap<->8 keep
+        # 15  hip_y_left (pos)                               | mirror: swap<->9 keep
+        # 16  knee_left (pos)                                | mirror: swap<->10 keep
+        # 17  ankle_y_left (pos)                             | mirror: swap<->11 keep
+        # 18  ankle_x_left (pos)                             | mirror: swap<->12 keep
+        # 19  shoulder1_right (pos)                          | mirror: swap<->22 keep
+        # 20  shoulder2_right (pos)                          | mirror: swap<->23 keep
+        # 21  elbow_right (pos)                              | mirror: swap<->24 keep
+        # 22  shoulder1_left (pos)                           | mirror: swap<->19 keep
+        # 23  shoulder2_left (pos)                           | mirror: swap<->20 keep
+        # 24  elbow_left (pos)                               | mirror: swap<->21 keep
+        # 25  local pelvis lin vel x                               | mirror: keep
+        # 26  local pelvis lin vel y                               | mirror: negate
+        # 27  local pelvis lin vel z                               | mirror: keep
+        # 28  local pelvis ang vel x                               | mirror: negate
+        # 29  local pelvis ang vel y                               | mirror: keep
+        # 30  local pelvis ang vel z                               | mirror: negate
+        # 31  abdomen_z (vel)                                | mirror: negate
+        # 32  abdomen_y (vel)                                | mirror: keep
+        # 33  abdomen_x (vel)                                | mirror: negate
+        # 34  hip_x_right (vel)                              | mirror: swap<->40 keep
+        # 35  hip_z_right (vel)                              | mirror: swap<->41 keep
+        # 36  hip_y_right (vel)                              | mirror: swap<->42 keep
+        # 37  knee_right (vel)                               | mirror: swap<->43 keep
+        # 38  ankle_y_right (vel)                            | mirror: swap<->44 keep
+        # 39  ankle_x_right (vel)                            | mirror: swap<->45 keep
+        # 40  hip_x_left (vel)                               | mirror: swap<->34 keep
+        # 41  hip_z_left (vel)                               | mirror: swap<->35 keep
+        # 42  hip_y_left (vel)                               | mirror: swap<->36 keep
+        # 43  knee_left (vel)                                | mirror: swap<->37 keep
+        # 44  ankle_y_left (vel)                             | mirror: swap<->38 keep
+        # 45  ankle_x_left (vel)                             | mirror: swap<->39 keep
+        # 46  shoulder1_right (vel)                          | mirror: swap<->49 keep
+        # 47  shoulder2_right (vel)                          | mirror: swap<->50 keep
+        # 48  elbow_right (vel)                              | mirror: swap<->51 keep
+        # 49  shoulder1_left (vel)                           | mirror: swap<->46 keep
+        # 50  shoulder2_left (vel)                           | mirror: swap<->47 keep
+        # 51  elbow_left (vel)                               | mirror: swap<->48 keep
+        # 52  target_sin = softsign(dist)*sin(angle)         | mirror: negate
+        # 53  target_cos = softsign(dist)*cos(angle)         | mirror: keep
+
+train:
+  total_timesteps: 30000000
+  frame_per_batch: 32768
+  # frame_per_batch: 8192
+  sub_batch_size: 1024
+  log_interval_base_num: 65536
+  num_envs: 16
+  seed: 42
+  log_interval: 8
+  eval_interval: 32
+  # log_interval: 32
+  # eval_interval: 128
+  test_overrides:
+    frame_per_batch: 256
+    sub_batch_size: 64
+    log_interval_base_num: 256
+    num_envs: 2
+
+ppo:
+  lr: 0.0003
+  clip_epsilon: 0.2
+  gamma: 0.999
+  max_grad_norm: 2.0
+  target_kl: 0.01
+  actor_architecture:
+    - [256, "Tanh"]
+    - [256, "Tanh"]
+    - [256, "Tanh"]
+  critic_architecture:
+    - [256, "Tanh"]
+    - [256, "Tanh"]
+    - [256, "Tanh"]
+  actor_net_init_gain: 0.01
+  actor_net_init_bias: 0.0
+  critic_net_init_gain: 1.0
+  critic_net_init_bias: 0.0
+  initial_scale: 0.3  # Higher initial exploration
+  scale_min: 0.01     # Higher minimum exploration
+  scale_max: 1.0
+  use_obs_norm: false
+  scale_distribution_method: "IndependentNormal"
+  actor_weight_init_method: "orthogonal"
+  critic_weight_init_method: "orthogonal"
+  # GSDE (Generalized State-Dependent Exploration) parameters
+  use_gsde: true  # Enable GSDE
+  gsde_learn_sigma: true  # Learn sigma parameters
+
+logging:
+  base_dir: "rl_models/trained"
+
+eval:
+  num_episodes: 5
+  max_episode_length: 600

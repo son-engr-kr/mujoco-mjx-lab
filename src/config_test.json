@@ -1,0 +1,160 @@
+{
+    "env": {
+        "xml_path": "models/humanoid.xml",
+        "tall_height_threshold": 1.4,
+        "tall_bonus_weight": 1.0,
+        "electricity_cost": 0.05,
+        "stall_torque_cost": 0.05,
+        "progress_weight": 0.5,
+        "stand_cost": 0.0,
+        "posture_penalty_weight": 1.0,
+        "target_dist": 5.0,
+        "target_threshold": 0.15,
+        "stop_frames": 20,
+        "random_vel_noise": 0.005,
+        "random_joint_noise": 0.005,
+        "random_target_noise": 0.5,
+        "initial_velocity_max": 0.5,
+        "terminate_height": 0.7,
+        "terminate_reward": 0.0,
+        "random_flip": true,
+        "joint_limit_force_threshold": 6.5
+    },
+    "symmetry": {
+        "flip_params": {
+            "action_index_info": {
+                "right": [
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    15,
+                    16,
+                    17
+                ],
+                "left": [
+                    9,
+                    10,
+                    11,
+                    12,
+                    13,
+                    14,
+                    18,
+                    19,
+                    20
+                ],
+                "negative_sign": [
+                    0,
+                    2
+                ]
+            },
+            "observation_index_info": {
+                "right": [
+                    29,
+                    30,
+                    31,
+                    32,
+                    33,
+                    34,
+                    41,
+                    42,
+                    43,
+                    62,
+                    63,
+                    64,
+                    65,
+                    66,
+                    67,
+                    74,
+                    75,
+                    76
+                ],
+                "left": [
+                    35,
+                    36,
+                    37,
+                    38,
+                    39,
+                    40,
+                    44,
+                    45,
+                    46,
+                    68,
+                    69,
+                    70,
+                    71,
+                    72,
+                    73,
+                    77,
+                    78,
+                    79
+                ],
+                "negative_sign": [
+                    2,
+                    11,
+                    12,
+                    14,
+                    52,
+                    54
+                ]
+            }
+        }
+    },
+    "network": {
+        "policy_hidden_layer_specs": [
+            [
+                256,
+                "relu"
+            ],
+            [
+                256,
+                "relu"
+            ],
+            [
+                256,
+                "relu"
+            ]
+        ],
+        "value_hidden_layer_specs": [
+            [
+                256,
+                "relu"
+            ],
+            [
+                256,
+                "relu"
+            ],
+            [
+                256,
+                "relu"
+            ]
+        ]
+    },
+    "ppo": {
+        "lr_policy": 3e-5,
+        "lr_value": 1e-4,
+        "num_envs": 16,
+        "rollout_length": 16,
+        "total_iterations": 50,
+        "minibatch_size": 256,
+        "gamma": 0.99,
+        "lam": 0.95,
+        "clip_eps": 0.2,
+        "ent_coef": 0.001,
+        "total_timesteps": 204800,
+        "frame_per_batch": 16,
+        "sub_batch_size": 16,
+        "epochs": 2,
+        "log_interval": 1,
+        "eval_interval": 1,
+        "checkpoint_every": 1,
+        "seed": 42,
+        "results_dir": "results_test",
+        "save_video": true,
+        "render_fps": 60,
+        "render_duration": 3.0,
+        "camera_name": "side_view"
+    }
+}

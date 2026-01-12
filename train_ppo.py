@@ -18,8 +18,8 @@ from functools import partial
 import optax
 # import flax.linen as nn <-- REMOVED
 
-# Enable NaN debugging
-jax.config.update("jax_debug_nans", True)
+# Enable NaN debugging (TURN OFF FOR SPEED)
+jax.config.update("jax_debug_nans", False)
 
 from src.training_utils import (
     load_model_and_create_env,
@@ -35,7 +35,25 @@ from src.networks import GaussianPolicy, ValueNet
 def train():
     """Main PPO training loop."""
     # 1. Configuration
-    cfg = PPOConfig()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--test", action="store_true", help="Use test config (fast debug)")
+    parser.add_argument("--config", type=str, default=None, help="Path to config file")
+    args, unknown = parser.parse_known_args()
+    
+    if args.config:
+        config_path = args.config
+    elif args.test:
+        config_path = os.path.join(os.path.dirname(__file__), "src", "config_test.json")
+    else:
+        config_path = os.path.join(os.path.dirname(__file__), "src", "config.json")
+        
+    if os.path.exists(config_path):
+        print(f"Loading config from {config_path}")
+        cfg = PPOConfig.from_json(config_path)
+    else:
+        print(f"Config file not found: {config_path}, using defaults")
+        cfg = PPOConfig()
     
     print_training_header("PPO", cfg)
     
@@ -46,16 +64,19 @@ def train():
     
     # 2. Environment
     try:
-        m, sys, q0, nq, nv, nu, _, _, v_reset, v_step = load_model_and_create_env(
+        m, sys, q0, nq, nv, nu, single_reset, single_step, v_reset, v_step = load_model_and_create_env(
             cfg.xml_path,
+            cfg.env_config,
             cfg.lighten_solver
         )
     except Exception as e:
         print(f"Error loading model: {e}")
+        # raise e # Debug
         return
     
     # 3. Networks (Pure JAX)
-    obs_dim = nq + nv
+    # Obs Dim matches src/envs.py logic: 1 + 3 + (nq-7) + nv + 2
+    obs_dim = 1 + 3 + (nq - 7) + nv + 2
     act_dim = nu
     
     rng = random.PRNGKey(cfg.seed)
@@ -88,7 +109,7 @@ def train():
     
     rng, key_reset = random.split(rng)
     keys = random.split(key_reset, num_envs)
-    data_b, obs_b = v_reset(keys)
+    state_b, obs_b = v_reset(keys)
 
     @jit
     def gaussian_logprob(mean, log_std, action):
@@ -98,11 +119,10 @@ def train():
         return -0.5 * jnp.sum(((action - mean) ** 2) / var + 2.0 * log_std + log2pi, axis=-1)
     
     @partial(jit, static_argnames=("v_reset", "num_envs"))
-    def collect_rollout(policy_params, rms_state, rng, data_b, obs_b, v_reset, num_envs):
+    def collect_rollout(policy_params, rms_state, rng, state_b, obs_b, v_reset, num_envs):
         def step_fn(carry, _):
-            rng, d, _ = carry
+            rng, state, obs = carry
             rng, key = random.split(rng)
-            obs = jnp.concatenate([d.qpos.astype(jnp.float32), d.qvel.astype(jnp.float32)], axis=1)
             
             # Normalize observations for Policy
             obs_norm = normalize_obs(rms_state, obs)
@@ -112,32 +132,31 @@ def train():
             eps = random.normal(key, mean.shape).astype(jnp.float32)
             act = mean + jnp.exp(log_std) * eps
             
-            d2, obs2, r, done = v_step(d, act)
+            # Step with tuple state
+            state_next, obs_next, r, done = v_step(state, act)
             logp = gaussian_logprob(mean, log_std, act)
             
-            # --- Auto-Reset (Fix for Negative Reward Loop) ---
-            # If done, reset state to avoid accumulated penalties while lying down
+            # --- Auto-Reset ---
             rng, key_reset = random.split(rng)
             keys = random.split(key_reset, num_envs)
-            d_reset, obs_reset = v_reset(keys)
+            state_reset, obs_reset = v_reset(keys)
             
             def merge_if_done(x_step, x_reset):
-                # Broadcast done to match leaf shape
                 target_shape = x_step.shape
                 d_shape = (target_shape[0],) + (1,) * (len(target_shape) - 1)
                 d_broad = done.reshape(d_shape)
                 return jnp.where(d_broad, x_reset, x_step)
             
-            d2 = jax.tree_util.tree_map(merge_if_done, d2, d_reset)
-            obs2 = merge_if_done(obs2, obs_reset)
-            # -----------------------------------------------
+            state_next = jax.tree_util.tree_map(merge_if_done, state_next, state_reset)
+            obs_next = merge_if_done(obs_next, obs_reset)
+            # ------------------
             
-            return (rng, d2, obs2), (obs, act, logp, r, done)
+            return (rng, state_next, obs_next), (obs, act, logp, r, done)
 
-        (_, d_last, obs_last), (obs_traj, act_traj, logp_traj, r_traj, done_traj) = lax.scan(
-            step_fn, (rng, data_b, obs_b), None, length=rollout_length
+        (rng_final, state_last, obs_last), (obs_traj, act_traj, logp_traj, r_traj, done_traj) = lax.scan(
+            step_fn, (rng, state_b, obs_b), None, length=rollout_length
         )
-        return d_last, obs_last, obs_traj, act_traj, logp_traj, r_traj, done_traj
+        return state_last, obs_last, obs_traj, act_traj, logp_traj, r_traj, done_traj
 
     @jit
     def compute_gae(rewards, values, dones):
@@ -218,10 +237,10 @@ def train():
         keys = random.split(key_reset, eval_envs)
         
         # Reset eval envs
-        d, obs = v_reset(keys)
+        state, obs = v_reset(keys)
         
         def step_fn(carry, _):
-            rng, d, obs, acc_reward = carry
+            rng, state, obs, acc_reward = carry
             
             # Normalize for Policy
             obs_norm = normalize_obs(rms_state, obs)
@@ -231,12 +250,12 @@ def train():
             mean, _ = policy_model.apply(policy_params, obs_norm)
             act = mean # No noise
             
-            d_next, obs_next, r, done = v_step(d, act)
+            state_next, obs_next, r, done = v_step(state, act)
             
             # Auto-Reset
             rng, key_reset = random.split(rng)
             keys = random.split(key_reset, eval_envs)
-            d_reset, obs_reset = v_reset(keys)
+            state_reset, obs_reset = v_reset(keys)
             
             def merge_if_done(x_step, x_reset):
                 target_shape = x_step.shape
@@ -244,16 +263,16 @@ def train():
                 d_broad = done.reshape(d_shape)
                 return jnp.where(d_broad, x_reset, x_step)
                 
-            d_next = jax.tree_util.tree_map(merge_if_done, d_next, d_reset)
+            state_next = jax.tree_util.tree_map(merge_if_done, state_next, state_reset)
             obs_next = merge_if_done(obs_next, obs_reset)
             
             new_acc_reward = acc_reward + r
-            return (rng, d_next, obs_next, new_acc_reward), None
+            return (rng, state_next, obs_next, new_acc_reward), None
 
         init_acc = jnp.zeros(eval_envs)
-        # Carry: rng, d, obs, acc_reward
+        # Carry: rng, state, obs, acc_reward
         (rng, _, _, total_rewards), _ = lax.scan(
-            step_fn, (rng, d, obs, init_acc), None, length=num_eval_steps
+            step_fn, (rng, state, obs, init_acc), None, length=num_eval_steps
         )
         return jnp.mean(total_rewards)
 
@@ -268,8 +287,8 @@ def train():
         
         # Collect rollout
         rng, key_roll = random.split(rng)
-        d_last, obs_last, obs_traj, act_traj, logp_traj, r_traj, done_traj = collect_rollout(
-            policy_params, rms_state, key_roll, data_b, obs_b, v_reset, num_envs
+        state_last, obs_last, obs_traj, act_traj, logp_traj, r_traj, done_traj = collect_rollout(
+            policy_params, rms_state, key_roll, state_b, obs_b, v_reset, num_envs
         )
         
         # Update RMS with collected observations
@@ -311,7 +330,7 @@ def train():
         )
         
         # Update env state
-        data_b, obs_b = d_last, obs_last
+        state_b, obs_b = state_last, obs_last
     
         # Metrics
         env_steps = float(num_envs * rollout_length)
@@ -333,8 +352,10 @@ def train():
         }
 
         # --- Evaluation & Checkpointing & Rendering ---
-        should_render = logger.should_render(it)
-        should_checkpoint = logger.should_checkpoint(it)
+        should_render = (it % cfg.eval_interval == 0) and cfg.save_video
+        should_checkpoint = (it % cfg.checkpoint_every == 0)
+        should_eval = (it % cfg.eval_interval == 0)
+        should_log = (it % cfg.log_interval == 0) or should_render or should_checkpoint or (it == total_iterations - 1) or should_eval
         
         # Progress & Time
         elapsed_sec = time.time() - logger.start_time
@@ -344,16 +365,16 @@ def train():
         total_step_count = int(total_iterations * env_steps)
         progress = f"{current_step_count:.1e}/{total_step_count:.1e}"
 
-        # Run Evaluation if rendering or checkpointing (or every 10 iters)
-        if should_render or should_checkpoint or (it % 10 == 0):
-            rng, key_eval = random.split(rng)
-            eval_return = evaluate(policy_params, rms_state, key_eval)
-            metrics["eval_return"] = float(eval_return)
-            print_msg = f"Iter {it:4d} | Time {elapsed_str} | Step {progress} | Train: {avg_return:7.2f} | Eval: {float(eval_return):7.2f} | EpLen: {avg_ep_len:6.0f} | S/s: {env_steps_per_sec:8.0f}"
-        else:
-            print_msg = f"Iter {it:4d} | Time {elapsed_str} | Step {progress} | Train: {avg_return:7.2f} | EpLen: {avg_ep_len:6.0f} | S/s: {env_steps_per_sec:8.0f}"
-            
-        logger.log_step(it, metrics, print_msg)
+        if should_log:
+             if should_eval: 
+                 rng, key_eval = random.split(rng)
+                 eval_return = evaluate(policy_params, rms_state, key_eval)
+                 metrics["eval_return"] = float(eval_return)
+                 print_msg = f"Iter {it:4d} | Time {elapsed_str} | Step {progress} | Train: {avg_return:7.2f} | Eval: {float(eval_return):7.2f} | EpLen: {avg_ep_len:6.0f} | S/s: {env_steps_per_sec:8.0f}"
+             else:
+                 print_msg = f"Iter {it:4d} | Time {elapsed_str} | Step {progress} | Train: {avg_return:7.2f} | EpLen: {avg_ep_len:6.0f} | S/s: {env_steps_per_sec:8.0f}"
+             
+             logger.log_step(it, metrics, print_msg)
         
         # Checkpoint
         if should_checkpoint:
@@ -363,13 +384,30 @@ def train():
         
         # Render
         if should_render:
+            # TODO: Improve render to handle tuple state if possible, currently it might fail or rely on naive assumption
+            # For now we use the same render_policy_fn. 
+            # Note: render_policy_rollout must be updated to support the new step function signature if we want it to work perfectly.
+            # But render_policy_rollout typically implementation uses mujoco step or mjx step directly.
+            # If so, it won't have the RandomFlip logic.
+            # However, for visualization, it usually shows the "True" physics.
+            # But the policy expects Flipped/Feature Obs.
+            # If the rendering loop constructs OBS naively, the policy will fail.
+            pass
+            # To fix rendering:
+            # We use the new env_step_fn support in render_policy_rollout
+            
             def render_policy_fn(params, obs):
                 obs = normalize_obs(rms_state, obs)
                 obs = jnp.clip(obs, -10.0, 10.0)
                 mean, _ = policy_model.apply(params, obs)
                 return mean 
             
-            logger.render_video(it, m, sys, policy_params, render_policy_fn, q0, filename_prefix="iter")
+            logger.render_video(
+                it, m, sys, policy_params, render_policy_fn, q0, 
+                filename_prefix="iter",
+                env_step_fn=single_step,
+                env_init_fn=single_reset,
+            )
             
     logger.print_final_summary()
     return policy_params, value_params, training_dir
