@@ -4,8 +4,8 @@
         "progress_weight": 1.0,
         "electricity_cost": 0.026,
         "stall_torque_cost": 0.0000023,
-        "joints_at_limit_cost": 5.0,
-        "posture_penalty_weight": 0.60,
+        "joints_at_limit_cost": 0.0,
+        "posture_penalty_weight": 0.00,
         "tall_height_threshold": 0.7,
         "tall_bonus_weight": 0.0,
         "target_threshold": 0.15,
@@ -18,7 +18,7 @@
         "terminate_height": 0.7,
         "terminate_reward": 0.0,
         "random_flip": true,
-        "joint_limit_force_threshold": 6.5
+        "joint_limit_force_threshold": 0.0
     },
     "symmetry": {
         "flip_params": {
@@ -107,11 +107,17 @@
         }
     },
     "ppo": {
+        "lr_policy": 0.0003,
+        "lr_value": 0.0003,
         "gamma": 0.99,
+        "lam": 0.95,
         "clip_eps": 0.2,
+        "ent_coef": 0.01,
         "num_envs": 4096,
         "rollout_length": 128,
+        "minibatch_size": 1024,
         "epochs": 4,
+        "total_iterations": 1000,
         "log_interval": 10,
         "eval_interval": 100,
         "checkpoint_every": 100,
