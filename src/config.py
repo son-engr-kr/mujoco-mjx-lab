@@ -46,7 +46,6 @@ class EnvConfig:
     terminate_reward: float = 0.0
     random_flip: bool = False
     joint_limit_force_threshold: float = 6.5
-    action_scale: float = 1.0  # Scale for action output (default: no scaling)
     
     # Body IDs (Resolved at runtime)
     pelvis_body_id: int = -1
@@ -118,6 +117,9 @@ class PPOConfig(BaseConfig):
     vf_coef: float = 0.5
     epochs: int = 4
     minibatch_size: int = 1024
+    
+    # Action exploration
+    log_std_init: float = 0.0  # Initial log std for exploration (0.0 → std=1.0)
     
     # Iterations
     total_iterations: int = 1000

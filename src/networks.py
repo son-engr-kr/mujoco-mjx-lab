@@ -81,7 +81,7 @@ class APGPolicy:
 
 class GaussianPolicy:
     """PPO Policy: MLP mean + Learnable LogStd."""
-    def __init__(self, action_dim, hidden_dim=128, hidden_depth=2, hidden_layer_specs=None):
+    def __init__(self, action_dim, hidden_dim=128, hidden_depth=2, hidden_layer_specs=None, log_std_init=0.0):
         if hidden_layer_specs is not None:
             layers = list(hidden_layer_specs)
         else:
@@ -91,10 +91,15 @@ class GaussianPolicy:
         layers.append((action_dim, 'linear'))
         self.mlp = MLP(layers)
         self.action_dim = action_dim
+        self.log_std_init = log_std_init
         
     def init(self, rng, input_shape):
         mlp_params = self.mlp.init(rng, input_shape)
-        log_std = jnp.zeros((self.action_dim,), dtype=jnp.float32)
+        # Initialize log_std with configurable value (controls exploration)
+        # log_std = 0.0 → std = 1.0 (default)
+        # log_std = -1.0 → std ≈ 0.37 (less exploration)
+        # log_std = 0.5 → std ≈ 1.65 (more exploration)
+        log_std = jnp.full((self.action_dim,), self.log_std_init, dtype=jnp.float32)
         return {"mlp": mlp_params, "log_std": log_std}
         
     def apply(self, params, x):

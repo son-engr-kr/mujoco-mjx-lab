@@ -331,9 +331,6 @@ def create_env_functions(sys: mjx.Model, cfg: EnvConfig, q0: jnp.ndarray, nq: in
         # Flip Action
         act_flipped = action[act_perm] * act_sign
         act_phys = jnp.where(flip > 0.5, act_flipped, action)
-        
-        # Apply action scale and clip
-        act_phys = act_phys * cfg.action_scale
         act_phys = jnp.clip(act_phys, -1.0, 1.0)
         
         # Step

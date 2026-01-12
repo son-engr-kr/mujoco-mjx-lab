@@ -90,7 +90,8 @@ def train():
     # Policy
     policy_model = GaussianPolicy(
         action_dim=act_dim, 
-        hidden_layer_specs=cfg.policy_hidden_layer_specs
+        hidden_layer_specs=cfg.policy_hidden_layer_specs,
+        log_std_init=cfg.log_std_init
     )
     rng, init_rng_p = random.split(rng)
     policy_params = policy_model.init(init_rng_p, obs_dim)
