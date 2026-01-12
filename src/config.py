@@ -11,10 +11,6 @@ class BaseConfig:
     xml_path: str = "models/humanoid_mjx.xml"
     lighten_solver: bool = False
     
-    # Rendering
-    render_duration: float = 6.0 # Approx 600 steps (assuming dt=0.01)
-    render_fps: int = 30
-    render_every: int = 50  # Render more frequently (was 200)
     
     # Misc
     seed: int = 42

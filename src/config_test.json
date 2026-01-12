@@ -144,7 +144,6 @@
         "clip_eps": 0.2,
         "ent_coef": 0.001,
         "total_timesteps": 204800,
-        "frame_per_batch": 16,
         "sub_batch_size": 16,
         "epochs": 2,
         "log_interval": 1,
