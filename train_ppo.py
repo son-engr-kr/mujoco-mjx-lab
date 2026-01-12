@@ -370,7 +370,8 @@ def train():
         
         current_step_count = int(logger.total_env_steps)
         total_step_count = int(total_iterations * env_steps)
-        progress = f"{current_step_count:.1e}/{total_step_count:.1e}"
+        pct = (current_step_count / total_step_count) * 100.0
+        progress = f"{current_step_count:.1e}/{total_step_count:.1e} ({pct:.1f}%)"
 
         if should_log:
              log_str = f"Iter {it:4d} | Time {elapsed_str} | Step {progress} | S/s: {env_steps_per_sec:8.0f}"
