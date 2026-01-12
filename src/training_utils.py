@@ -79,6 +79,13 @@ def load_model_and_create_env(
     print(f"Loading model: {xml_path}")
     m = mujoco.MjModel.from_xml_path(xml_path)
     
+    # Resolve Body IDs dynamically
+
+    env_config.pelvis_body_id = m.body("pelvis").id
+    env_config.head_body_id = m.body("head").id
+    
+    print(f"Resolved Body IDs: Pelvis={env_config.pelvis_body_id}, Head={env_config.head_body_id}")
+
     if lighten_solver:
         m.opt.iterations = 1
         m.opt.ls_iterations = 1

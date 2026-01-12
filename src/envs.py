@@ -76,36 +76,9 @@ def create_env_functions(sys: mjx.Model, cfg: EnvConfig, q0: jnp.ndarray, nq: in
     target_threshold = cfg.target_threshold # 0.15
     initial_vel_max = cfg.initial_velocity_max
 
-    @jit
-    def get_body_pos(d):
-        return d.xpos[1] # Pelvis is usually body 1? No, 0 is world. 1 is torso/pelvis.
-        # Check humanoid.xml: worldbody -> torso (id 1) -> pelvis (id 2).
-        # Actually in XML:
-        # worldbody (0)
-        #   torso (1) (freejoint root)
-        #     waist_upper ...
-        #     head ...
-        #     waist_lower ...
-        #       pelvis ...
-        # Wait, reference says `self.data.body("pelvis").xpos`.
-        # I need to find body index of "pelvis". It's not necessarily 1.
-        # But `custom_walker.py` uses `self.data.body("pelvis").xpos`.
-        # I will assume "pelvis" is index 1 for `root` usually, BUT `torso` is root in XML.
-        # `pelvis` is deeper.
-        # I will use `sys.body_name2id("pelvis")` if I could, but `mjx` doesn't have it easily available in JIT.
-        # I passed `sys` (mjx.Model). `mujoco.mj_name2id` works on `m` (mujoco.MjModel).
-        # I should have passed `m` or body ids.
-        # For now, I'll rely on hardcoded assumption or find it.
-        # In `humanoid.xml` provided: `torso` (1), `head` (2), `waist_lower` (3), `pelvis` (4).
-        # Let's hope indices are stable.
-        # BETTER: Use `sys.nbody` and heuristic? No.
-        # I will hardcode `PELVIS_PID = 4` and `HEAD_ID = 2` based on XML structure.
-        # XML: world -> torso (child 0). torso -> head (child 0), waist_lower (child 1). waist_lower -> pelvis.
-        # Body IDs: 0 (world), 1 (torso), 2 (head), 3 (waist_lower), 4 (pelvis).
-        return d.xpos[4]
 
-    PELVIS_ID = 4
-    HEAD_ID = 2
+
+
 
     @jit
     def get_pelvis_quat(d):
@@ -326,12 +299,13 @@ def create_env_functions(sys: mjx.Model, cfg: EnvConfig, q0: jnp.ndarray, nq: in
         d = mjx.step(sys, d) 
         
         # --- Shared Computations ---
-        head_pos = d.xpos[HEAD_ID]
-        body_pos = d.xpos[PELVIS_ID]
+        # USE DYNAMIC IDs
+        head_pos = d.xpos[cfg.head_body_id]
+        body_pos = d.xpos[cfg.pelvis_body_id]
         height = body_pos[2]
         
         # RPY
-        pelvis_quat = d.xquat[PELVIS_ID]
+        pelvis_quat = d.xquat[cfg.pelvis_body_id]
         # Inline RPY for reuse
         q = pelvis_quat
         w, x, y, z = q[0], q[1], q[2], q[3]
@@ -369,14 +343,16 @@ def create_env_functions(sys: mjx.Model, cfg: EnvConfig, q0: jnp.ndarray, nq: in
         stall = jnp.square(d.qfrc_actuator[6:])
         energy_penalty += cfg.stall_torque_cost * jnp.mean(stall)
         
-        # Posture
+        # Posture (Match Reference Logic: Deadzone + Abs Penalty)
+        # Pitch Safe: [-5, 10] deg -> [-0.087, 0.174] rad
+        # Roll Safe: [-10, 10] deg -> [-0.174, 0.174] rad
         p_ok = (pitch > -0.087) & (pitch < 0.174)
         posture_penalty = jnp.where(p_ok, 0.0, jnp.abs(pitch))
         r_ok = (roll > -0.174) & (roll < 0.174)
         posture_penalty += jnp.where(r_ok, 0.0, jnp.abs(roll))
         posture_penalty *= cfg.posture_penalty_weight
         
-        # Tall
+        # Tall (Match Reference Logic: +1.0 if tall, -1.0 if short)
         tall_raw = jnp.where(height > cfg.tall_height_threshold, 1.0, -1.0)
         tall_bonus = cfg.tall_bonus_weight * tall_raw
         

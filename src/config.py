@@ -47,6 +47,10 @@ class EnvConfig:
     random_flip: bool = False
     joint_limit_force_threshold: float = 6.5
     
+    # Body IDs (Resolved at runtime)
+    pelvis_body_id: int = -1
+    head_body_id: int = -1
+    
     # Flip params (Indices)
     flip_action_right: List[int] = field(default_factory=lambda: [3, 4, 5, 6, 7, 8, 15, 16, 17])
     flip_action_left: List[int] = field(default_factory=lambda: [9, 10, 11, 12, 13, 14, 18, 19, 20])
