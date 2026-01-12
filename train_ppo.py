@@ -236,10 +236,16 @@ def train():
 
     # Evaluation Function (Deterministic)
     @jit
-    def evaluate(policy_params, rms_state, rng, num_eval_steps=500):
-        """Run deterministic evaluation."""
+    def evaluate(policy_params, rms_state, rng, iteration, num_eval_steps=500):
+        """Run deterministic evaluation with iteration-based seed variation."""
         eval_envs = 32  # Run 32 parallel envs for evaluation
-        rng, key_reset = random.split(rng)
+        
+        # Create deterministic but varied seed based on iteration
+        # This ensures different initial conditions per evaluation while remaining reproducible
+        eval_seed = cfg.seed + 10000 + iteration  # Offset to avoid training seed collision
+        eval_rng = random.PRNGKey(eval_seed)
+        
+        rng, key_reset = random.split(eval_rng)
         keys = random.split(key_reset, eval_envs)
         
         # Reset eval envs
@@ -386,7 +392,7 @@ def train():
              
              if should_eval: 
                  rng, key_eval = random.split(rng)
-                 eval_return = evaluate(policy_params, rms_state, key_eval)
+                 eval_return = evaluate(policy_params, rms_state, key_eval, it)
                  metrics["eval_return"] = float(eval_return)
                  log_str += f" | Eval_Ret(Avg): {float(eval_return):7.2f}"
              

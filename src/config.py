@@ -46,6 +46,7 @@ class EnvConfig:
     terminate_reward: float = 0.0
     random_flip: bool = False
     joint_limit_force_threshold: float = 6.5
+    action_scale: float = 1.0  # Scale for action output (default: no scaling)
     
     # Body IDs (Resolved at runtime)
     pelvis_body_id: int = -1

@@ -18,7 +18,8 @@
         "terminate_height": 0.7,
         "terminate_reward": 0.0,
         "random_flip": true,
-        "joint_limit_force_threshold": 6.5
+        "joint_limit_force_threshold": 6.5,
+        "action_scale": 1.0
     },
     "symmetry": {
         "flip_params": {
