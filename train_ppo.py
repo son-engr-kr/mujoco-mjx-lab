@@ -2,6 +2,12 @@
 MJX Humanoid PPO Training using Pure JAX (No Flax).
 Optimized based on benchmark: ~72,618 device steps/sec
 """
+import warnings
+# Suppress Warp deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="warp.*")
+warnings.filterwarnings("ignore", message=".*warp.context.*")
+warnings.filterwarnings("ignore", message=".*warp.math.*")
+
 import os
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))

@@ -2,6 +2,12 @@
 Quick test script to verify the refactored training setup works.
 Tests new Pure JAX networks and config system.
 """
+import warnings
+# Suppress Warp deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="warp.*")
+warnings.filterwarnings("ignore", message=".*warp.context.*")
+warnings.filterwarnings("ignore", message=".*warp.math.*")
+
 import os
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))

@@ -12,7 +12,8 @@ from src.config import EnvConfig
 
 # Type alias for ease of use
 # EnvState is now (mjx.Data, AuxState)
-AuxState = jax.Array # [flip, tx, ty, tz, close_count, stance, stance_t, last_pot]
+# AuxState: [flip, tx, ty, tz, close_count, stance_state, stance_last_change_time, last_pot]
+AuxState = jax.Array
 EnvState = Tuple[mjx.Data, AuxState]
 Obs = jax.Array
 Action = jax.Array
@@ -75,16 +76,33 @@ def create_env_functions(sys: mjx.Model, cfg: EnvConfig, q0: jnp.ndarray, nq: in
     target_dist = cfg.target_dist
     target_threshold = cfg.target_threshold # 0.15
     initial_vel_max = cfg.initial_velocity_max
-
-
-
-
-
+    stance_time_reward_weight = cfg.stance_time_reward_weight
+    
+    # Touch sensor IDs for stance detection
+    touch_right_id = cfg.touch_sensor_right_id
+    touch_left_id = cfg.touch_sensor_left_id
+    
+    # Stance state enumeration (matching FootContactState)
+    # DOUBLE=0, RIGHT=1, LEFT=2, FLY=3
+    
     @jit
-    def get_pelvis_quat(d):
-        return d.xquat[PELVIS_ID]
-
-    # get_target_features and get_body_velocities removed as they are now inlined for performance.
+    def get_stance_state(sensor_data: jax.Array) -> jax.Array:
+        """Determine foot contact state from touch sensor data."""
+        right_contact = sensor_data[touch_right_id] > 0.0
+        left_contact = sensor_data[touch_left_id] > 0.0
+        
+        # Match reference: DOUBLE=0, RIGHT=1, LEFT=2, FLY=3
+        stance = jnp.where(
+            right_contact & left_contact, 0.0,  # DOUBLE
+            jnp.where(
+                right_contact & ~left_contact, 1.0,  # RIGHT
+                jnp.where(
+                    ~right_contact & left_contact, 2.0,  # LEFT
+                    3.0  # FLY
+                )
+            )
+        )
+        return stance
 
     @jit
     def single_pipeline_init(q: jax.Array, qd: jax.Array) -> EnvState:
@@ -95,12 +113,12 @@ def create_env_functions(sys: mjx.Model, cfg: EnvConfig, q0: jnp.ndarray, nq: in
 
     @jit
     def single_reset(key: jax.Array) -> Tuple[EnvState, Obs]:
-        k1, k2, k3 = random.split(key, 3)
+        k1, k2, k3, k4 = random.split(key, 4)
         qpos = jnp.array(q0)
         qvel = jnp.zeros(nv, dtype=jnp.float32)
         
         # Init Aux
-        # [flip, tx, ty, tz, close, stance, stance_t, last_pot]
+        # [flip, tx, ty, tz, close_count, stance_state, stance_last_change_time, last_pot]
         flip = jnp.where(random.bernoulli(k3, 0.5), 1.0, 0.0) if cfg.random_flip else 0.0
         
         # Random Initial Pose
@@ -114,30 +132,51 @@ def create_env_functions(sys: mjx.Model, cfg: EnvConfig, q0: jnp.ndarray, nq: in
         d = single_pipeline_init(qpos, qvel)
         
         # Initial Target
-        body_pos = d.xpos[PELVIS_ID]
+        body_pos = d.xpos[cfg.pelvis_body_id]
         tx = body_pos[0] + cfg.target_dist
         ty = body_pos[1]
         tz = body_pos[2]
+        
+        # Apply Initial Velocity Toward Target (matching reference)
+        if initial_vel_max > 0.0:
+            dx = tx - body_pos[0]
+            dy = ty - body_pos[1]
+            dist_xy = jnp.sqrt(dx**2 + dy**2)
+            # Avoid division by zero
+            vel_magnitude = random.uniform(k4, minval=0.0, maxval=initial_vel_max)
+            vx = jnp.where(dist_xy > 1e-6, vel_magnitude * dx / dist_xy, 0.0)
+            vy = jnp.where(dist_xy > 1e-6, vel_magnitude * dy / dist_xy, 0.0)
+            # Apply to root joint velocities (first 2 components of qvel)
+            qvel = qvel.at[0].set(vx)
+            qvel = qvel.at[1].set(vy)
+            # Re-initialize with new velocity
+            d = single_pipeline_init(qpos, qvel)
+            # Update body_pos after velocity application
+            body_pos = d.xpos[cfg.pelvis_body_id]
         
         # Initial Pot
         dx_p = tx - body_pos[0]
         dy_p = ty - body_pos[1]
         dist_p = jnp.sqrt(dx_p**2 + dy_p**2)
-        head_pos = d.xpos[HEAD_ID]
+        head_pos = d.xpos[cfg.head_body_id]
         dx_h = tx - head_pos[0]
         dy_h = ty - head_pos[1]
         dist_h = jnp.sqrt(dx_h**2 + dy_h**2)
         dist = jnp.maximum(dist_p, dist_h)
         
-        last_pot = -dist / sys.opt.timestep 
+        last_pot = -dist / sys.opt.timestep
         
-        aux = jnp.array([flip, tx, ty, tz, 0.0, 0.0, d.time, last_pot]) 
+        # Initialize stance state
+        initial_stance = get_stance_state(d.sensordata)
+        
+        # Aux: [flip, tx, ty, tz, close_count, stance_state, stance_last_change_time, last_pot]
+        aux = jnp.array([flip, tx, ty, tz, 0.0, initial_stance, d.time, last_pot]) 
         
         # Obs construction
         height = body_pos[2]
         
         # RPY
-        q = d.xquat[PELVIS_ID]
+        q = d.xquat[cfg.pelvis_body_id]
         w, x, y, z = q[0], q[1], q[2], q[3]
         sinr_cosp = 2.0 * (w * x + y * z)
         cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
@@ -337,10 +376,17 @@ def create_env_functions(sys: mjx.Model, cfg: EnvConfig, q0: jnp.ndarray, nq: in
         last_linear_potential = aux[7]
         progress = (linear_potential - last_linear_potential) * cfg.progress_weight
         
-        # Energy
-        power = jnp.abs(d.qfrc_actuator[6:] * d.qvel[6:])
+        # Energy (Fixed: use actuated joint velocities only)
+        # MJX: qvel[6:] are joint velocities, qfrc_actuator indexed by actuator
+        # For humanoid with 21 hinge actuators, we compute per-joint energy
+        # Reference uses actuated joints only (skips freejoint)
+        joint_velocities = d.qvel[6:]  # Hinge joint velocities
+        # qfrc_actuator is per-DOF force. For hinges after freejoint (6 DOF), use [6:]
+        joint_forces = d.qfrc_actuator[6:]  # Forces on hinge joints
+        
+        power = jnp.abs(joint_forces * joint_velocities)
         energy_penalty = cfg.electricity_cost * jnp.mean(power)
-        stall = jnp.square(d.qfrc_actuator[6:])
+        stall = jnp.square(joint_forces)
         energy_penalty += cfg.stall_torque_cost * jnp.mean(stall)
         
         # Posture (Match Reference Logic: Deadzone + Abs Penalty)
@@ -355,6 +401,24 @@ def create_env_functions(sys: mjx.Model, cfg: EnvConfig, q0: jnp.ndarray, nq: in
         # Tall (Match Reference Logic: +1.0 if tall, -1.0 if short)
         tall_raw = jnp.where(height > cfg.tall_height_threshold, 1.0, -1.0)
         tall_bonus = cfg.tall_bonus_weight * tall_raw
+        
+        # Stance-Duration Reward (matching reference implementation)
+        old_stance_state = aux[5]
+        stance_last_change_time = aux[6]
+        new_stance_state = get_stance_state(d.sensordata)
+        
+        stance_changed = new_stance_state != old_stance_state
+        stance_duration = d.time - stance_last_change_time
+        # Reward duration if changed and duration > 0.1s (matching reference)
+        stance_reward = jnp.where(
+            stance_changed & (stance_duration > 0.1),
+            stance_time_reward_weight * stance_duration / dt,
+            0.0
+        )
+        
+        # Update stance tracking
+        stance_state_updated = jnp.where(stance_changed, new_stance_state, old_stance_state)
+        stance_time_updated = jnp.where(stance_changed, d.time, stance_last_change_time)
         
         # Advance Logic
         is_close = dist < target_threshold
@@ -389,13 +453,14 @@ def create_env_functions(sys: mjx.Model, cfg: EnvConfig, q0: jnp.ndarray, nq: in
         linear_potential_new = -dist_new / dt
         
         joints_penalty = 0.0
-        reward = progress + target_bonus - energy_penalty + tall_bonus - posture_penalty - joints_penalty
+        reward = progress + target_bonus + stance_reward - energy_penalty + tall_bonus - posture_penalty - joints_penalty
         
         fallen = height < cfg.terminate_height
         done = jnp.where(fallen, 1.0, 0.0)
         reward = jnp.where(fallen, reward + cfg.terminate_reward, reward)
         
-        aux_new = jnp.array([flip, tx, ty, tz, close_count, 0.0, d.time, linear_potential_new])
+        # Update aux with stance tracking
+        aux_new = jnp.array([flip, tx, ty, tz, close_count, stance_state_updated, stance_time_updated, linear_potential_new])
         
         # --- Obs Construction ---
         qvel_local = get_body_velocities_local(d.qvel, pelvis_quat)

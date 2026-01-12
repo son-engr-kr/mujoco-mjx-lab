@@ -51,6 +51,10 @@ class EnvConfig:
     pelvis_body_id: int = -1
     head_body_id: int = -1
     
+    # Sensor IDs (Resolved at runtime)
+    touch_sensor_right_id: int = -1
+    touch_sensor_left_id: int = -1
+    
     # Flip params (Indices)
     flip_action_right: List[int] = field(default_factory=lambda: [3, 4, 5, 6, 7, 8, 15, 16, 17])
     flip_action_left: List[int] = field(default_factory=lambda: [9, 10, 11, 12, 13, 14, 18, 19, 20])

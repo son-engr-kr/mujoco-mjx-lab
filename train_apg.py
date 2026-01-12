@@ -6,6 +6,12 @@ Optimized with:
 - Enhanced randomization
 - AGGRESSIVE gradient clipping for stability
 """
+import warnings
+# Suppress Warp deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="warp.*")
+warnings.filterwarnings("ignore", message=".*warp.context.*")
+warnings.filterwarnings("ignore", message=".*warp.math.*")
+
 import os
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))

@@ -84,7 +84,13 @@ def load_model_and_create_env(
     env_config.pelvis_body_id = m.body("pelvis").id
     env_config.head_body_id = m.body("head").id
     
+    # Resolve Sensor IDs for touch sensors
+    env_config.touch_sensor_right_id = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SENSOR, "touch_foot_right")
+    env_config.touch_sensor_left_id = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_SENSOR, "touch_foot_left")
+    
     print(f"Resolved Body IDs: Pelvis={env_config.pelvis_body_id}, Head={env_config.head_body_id}")
+    print(f"Resolved Sensor IDs: TouchRight={env_config.touch_sensor_right_id}, TouchLeft={env_config.touch_sensor_left_id}")
+
 
     if lighten_solver:
         m.opt.iterations = 1

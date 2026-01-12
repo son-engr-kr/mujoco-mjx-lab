@@ -1,3 +1,9 @@
+import warnings
+# Suppress Warp deprecation warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="warp.*")
+warnings.filterwarnings("ignore", message=".*warp.context.*")
+warnings.filterwarnings("ignore", message=".*warp.math.*")
+
 import os
 import time
 
