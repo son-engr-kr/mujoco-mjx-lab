@@ -338,17 +338,24 @@ def train():
         iter_dt = max(time.time() - iter_t0, 1e-9)
         env_steps_per_sec = env_steps / iter_dt
         
-        # Training Return (Noisy)
-        avg_return = float(jnp.mean(jnp.sum(r_traj, axis=0)))
+        # Training Metrics
+        # r_traj is (Rollout, NumEnvs). Sum over time, then mean over envs.
+        train_return_avg = float(jnp.mean(jnp.sum(r_traj, axis=0)))
+        train_return_max = float(jnp.max(jnp.sum(r_traj, axis=0)))
         
-        # Episode Length (Avg)
+        # Episode Length (Approximate)
+        # Total steps / (Total dones). If no dones, it's rollout length (or infinity).
         total_dones = float(jnp.sum(done_traj))
-        avg_ep_len = env_steps / (total_dones + 1e-6)
+        if total_dones > 0:
+            train_eplen_avg = env_steps / total_dones
+        else:
+            train_eplen_avg = float(rollout_length) # Fallback if no episodes finished
         
         metrics = {
-            "avg_return": avg_return,
+            "train_return_avg": train_return_avg,
+            "train_return_max": train_return_max,
+            "train_eplen_avg": train_eplen_avg,
             "env_steps_per_sec": env_steps_per_sec,
-            "avg_ep_len": avg_ep_len,
         }
 
         # --- Evaluation & Checkpointing & Rendering ---
@@ -366,15 +373,17 @@ def train():
         progress = f"{current_step_count:.1e}/{total_step_count:.1e}"
 
         if should_log:
+             log_str = f"Iter {it:4d} | Time {elapsed_str} | Step {progress} | S/s: {env_steps_per_sec:8.0f}"
+             log_str += f" | Train_Ret(Avg): {train_return_avg:7.2f}"
+             log_str += f" | Train_Len(Avg): {train_eplen_avg:6.0f}"
+             
              if should_eval: 
                  rng, key_eval = random.split(rng)
                  eval_return = evaluate(policy_params, rms_state, key_eval)
                  metrics["eval_return"] = float(eval_return)
-                 print_msg = f"Iter {it:4d} | Time {elapsed_str} | Step {progress} | Train: {avg_return:7.2f} | Eval: {float(eval_return):7.2f} | EpLen: {avg_ep_len:6.0f} | S/s: {env_steps_per_sec:8.0f}"
-             else:
-                 print_msg = f"Iter {it:4d} | Time {elapsed_str} | Step {progress} | Train: {avg_return:7.2f} | EpLen: {avg_ep_len:6.0f} | S/s: {env_steps_per_sec:8.0f}"
+                 log_str += f" | Eval_Ret(Avg): {float(eval_return):7.2f}"
              
-             logger.log_step(it, metrics, print_msg)
+             logger.log_step(it, metrics, log_str)
         
         # Checkpoint
         if should_checkpoint:
