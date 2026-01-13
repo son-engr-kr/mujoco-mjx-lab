@@ -201,6 +201,12 @@ def create_env_functions(sys: mjx.Model, cfg: EnvConfig, q0: jnp.ndarray, nq: in
         
         return (d, aux), obs
 
+
+    @jit
+    def get_pelvis_quat(d):
+        """Get pelvis quaternion from mjx data."""
+        return d.xquat[cfg.pelvis_body_id]
+
     @jit
     def get_body_velocities(d):
         # qvel 0-5 are root (freejoint)
@@ -325,7 +331,7 @@ def create_env_functions(sys: mjx.Model, cfg: EnvConfig, q0: jnp.ndarray, nq: in
         return obs_final
 
     @jit
-    def single_step(state: EnvState, action: Action) -> Tuple[EnvState, Obs, Reward, Done]:
+    def single_step(state: EnvState, action: Action) -> Tuple[EnvState, Obs, Reward, Terminated, Truncated]:
         d, aux = state
         flip = aux[0]
         
