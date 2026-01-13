@@ -125,7 +125,14 @@ def render_policy_rollout(
             # Standard: just return next_state.
         else:
             # Custom Env Step
-            next_state, next_obs, _, done = env_step_fn(state, action)
+            # Now likely returns (state, obs, reward, terminated, truncated)
+            result = env_step_fn(state, action)
+            if len(result) == 5:
+                next_state, next_obs, _, terminated, truncated = result
+                done = jnp.maximum(terminated, truncated)
+            else:
+                 # Fallback for old envs (state, obs, r, done)
+                 next_state, next_obs, _, done = result
             
             # Auto-Reset Logic for Custom Env
             # We need to switch next_state to init_state (resampled) if done.
