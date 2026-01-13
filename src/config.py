@@ -44,6 +44,7 @@ class EnvConfig:
     initial_velocity_max: float = 0.5
     terminate_height: float = 0.7
     terminate_reward: float = 0.0
+    max_episode_steps: int = 1000  # Episode time limit (0 = no limit)
     random_flip: bool = False
     joint_limit_force_threshold: float = 6.5
     

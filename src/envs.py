@@ -12,14 +12,15 @@ from src.config import EnvConfig
 
 # Type alias for ease of use
 # EnvState is now (mjx.Data, AuxState)
-# AuxState: [flip, tx, ty, tz, close_count, stance_state, stance_last_change_time, last_pot]
+# AuxState: [flip, tx, ty, tz, close_count, stance_state, stance_last_change_time, last_pot, episode_step]
 AuxState = jax.Array
 EnvState = Tuple[mjx.Data, AuxState]
 Obs = jax.Array
 Action = jax.Array
 Reward = jax.Array
-Done = jax.Array
-EnvStepFn = Callable[[EnvState, Action], Tuple[EnvState, Obs, Reward, Done]]
+Terminated = jax.Array
+Truncated = jax.Array
+EnvStepFn = Callable[[EnvState, Action], Tuple[EnvState, Obs, Reward, Terminated, Truncated]]
 EnvResetFn = Callable[[jax.Array], Tuple[EnvState, Obs]]
 
 def create_env_functions(sys: mjx.Model, cfg: EnvConfig, q0: jnp.ndarray, nq: int, nv: int) -> Tuple[EnvResetFn, EnvStepFn, EnvResetFn, EnvStepFn]:
@@ -169,8 +170,8 @@ def create_env_functions(sys: mjx.Model, cfg: EnvConfig, q0: jnp.ndarray, nq: in
         # Initialize stance state
         initial_stance = get_stance_state(d.sensordata)
         
-        # Aux: [flip, tx, ty, tz, close_count, stance_state, stance_last_change_time, last_pot]
-        aux = jnp.array([flip, tx, ty, tz, 0.0, initial_stance, d.time, last_pot]) 
+        # Aux: [flip, tx, ty, tz, close_count, stance_state, stance_last_change_time, last_pot, episode_step]
+        aux = jnp.array([flip, tx, ty, tz, 0.0, initial_stance, d.time, last_pot, 0.0]) 
         
         # Obs construction
         height = body_pos[2]
@@ -455,12 +456,26 @@ def create_env_functions(sys: mjx.Model, cfg: EnvConfig, q0: jnp.ndarray, nq: in
         joints_penalty = 0.0
         reward = progress + target_bonus + stance_reward - energy_penalty + tall_bonus - posture_penalty - joints_penalty
         
+        # Episode step tracking
+        episode_step = aux[8]
+        episode_step = episode_step + 1.0
+        
+        # Terminate vs Truncate distinction
         fallen = height < cfg.terminate_height
-        done = jnp.where(fallen, 1.0, 0.0)
+        terminated = jnp.where(fallen, 1.0, 0.0)
+        
+        # Truncated if episode length limit reached (if max_episode_steps > 0)
+        truncated = jnp.where(
+            (cfg.max_episode_steps > 0) & (episode_step >= cfg.max_episode_steps),
+            1.0,
+            0.0
+        )
+        
+        # Apply terminate reward only for terminated (not truncated)
         reward = jnp.where(fallen, reward + cfg.terminate_reward, reward)
         
-        # Update aux with stance tracking
-        aux_new = jnp.array([flip, tx, ty, tz, close_count, stance_state_updated, stance_time_updated, linear_potential_new])
+        # Update aux with stance tracking and episode step
+        aux_new = jnp.array([flip, tx, ty, tz, close_count, stance_state_updated, stance_time_updated, linear_potential_new, episode_step])
         
         # --- Obs Construction ---
         qvel_local = get_body_velocities_local(d.qvel, pelvis_quat)
@@ -468,7 +483,7 @@ def create_env_functions(sys: mjx.Model, cfg: EnvConfig, q0: jnp.ndarray, nq: in
         
         obs = compute_obs(flip, height, rpy, joint_pos, qvel_local, tgt_feat_final)
         
-        return (d, aux_new), obs, reward, done
+        return (d, aux_new), obs, reward, terminated, truncated
 
     v_reset = jit(jax.vmap(single_reset))
     v_step = jit(jax.vmap(single_step, in_axes=(0, 0)))

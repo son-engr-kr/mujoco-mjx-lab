@@ -17,6 +17,7 @@
         "initial_velocity_max": 0.5,
         "terminate_height": 0.7,
         "terminate_reward": 0.0,
+        "max_episode_steps": 500,
         "random_flip": true,
         "joint_limit_force_threshold": 6.5
     },

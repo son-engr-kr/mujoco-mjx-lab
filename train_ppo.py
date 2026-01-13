@@ -139,9 +139,12 @@ def train():
             eps = random.normal(key, mean.shape).astype(jnp.float32)
             act = mean + jnp.exp(log_std) * eps
             
-            # Step with tuple state
-            state_next, obs_next, r, done = v_step(state, act)
+            # Step with tuple state (now returns terminated, truncated)
+            state_next, obs_next, r, terminated, truncated = v_step(state, act)
             logp = gaussian_logprob(mean, log_std, act)
+            
+            # Done = terminated OR truncated (for auto-reset)
+            done = jnp.maximum(terminated, truncated)
             
             # --- Auto-Reset ---
             rng, key_reset = random.split(rng)
@@ -158,23 +161,42 @@ def train():
             obs_next = merge_if_done(obs_next, obs_reset)
             # ------------------
             
-            return (rng, state_next, obs_next), (obs, act, logp, r, done)
+            return (rng, state_next, obs_next), (obs, act, logp, r, terminated, truncated)
 
-        (rng_final, state_last, obs_last), (obs_traj, act_traj, logp_traj, r_traj, done_traj) = lax.scan(
+        (rng_final, state_last, obs_last), (obs_traj, act_traj, logp_traj, r_traj, term_traj, trunc_traj) = lax.scan(
             step_fn, (rng, state_b, obs_b), None, length=rollout_length
         )
-        return state_last, obs_last, obs_traj, act_traj, logp_traj, r_traj, done_traj
+        return state_last, obs_last, obs_traj, act_traj, logp_traj, r_traj, term_traj, trunc_traj
 
     @jit
-    def compute_gae(rewards, values, dones):
+    def compute_gae(rewards, values, terminated, truncated):
+        """
+        Compute GAE with proper terminate/truncate distinction.
+        
+        Args:
+            rewards: (T, B) rewards
+            values: (T+1, B) values (includes last value for bootstrap)
+            terminated: (T, B) terminated flags (1.0 if truly done)
+            truncated: (T, B) truncated flags (1.0 if time limit)
+        """
         def scan_fn(carry, inputs):
-            next_value, reward, done, value = inputs
-            delta = reward + cfg.gamma * next_value * (1.0 - done) - value
+            next_value, reward, term, trunc, value = inputs
+            
+            # Bootstrap mask: only terminated episodes don't bootstrap
+            # Truncated episodes SHOULD bootstrap (they're not really done)
+            bootstrap_mask = 1.0 - term
+            
+            # TD error with proper bootstrapping
+            delta = reward + cfg.gamma * next_value * bootstrap_mask - value
+            
+            # GAE: stop accumulation if either terminated OR truncated
+            done = jnp.maximum(term, trunc)
             advantage = delta + cfg.gamma * cfg.lam * (1.0 - done) * carry
+            
             return advantage, advantage
 
         init_adv = jnp.zeros_like(rewards[0])
-        inputs = (values[1:], rewards, dones, values[:-1])
+        inputs = (values[1:], rewards, terminated, truncated, values[:-1])
         _, adv_rev = lax.scan(lambda c, x: scan_fn(c, x), init_adv, inputs, reverse=True)
         ret = adv_rev + values[:-1]
         return adv_rev, ret
@@ -263,7 +285,8 @@ def train():
             mean, _ = policy_model.apply(policy_params, obs_norm)
             act = mean # No noise
             
-            state_next, obs_next, r, done = v_step(state, act)
+            state_next, obs_next, r, terminated, truncated = v_step(state, act)
+            done = jnp.maximum(terminated, truncated)
             
             # Auto-Reset
             rng, key_reset = random.split(rng)
@@ -300,7 +323,7 @@ def train():
         
         # Collect rollout
         rng, key_roll = random.split(rng)
-        state_last, obs_last, obs_traj, act_traj, logp_traj, r_traj, done_traj = collect_rollout(
+        state_last, obs_last, obs_traj, act_traj, logp_traj, r_traj, term_traj, trunc_traj = collect_rollout(
             policy_params, rms_state, key_roll, state_b, obs_b, v_reset, num_envs
         )
         
@@ -323,7 +346,7 @@ def train():
         v_traj_plus_flat = value_model.apply(value_params, obs_stack_flat)
         v_traj_plus = v_traj_plus_flat.reshape(rollout_length + 1, num_envs)
         
-        adv, ret = compute_gae(r_traj, v_traj_plus, done_traj)
+        adv, ret = compute_gae(r_traj, v_traj_plus, term_traj, trunc_traj)
         
         # Flatten (Use Normalized Obs)
         obs_flat = obs_traj_norm.reshape(rollout_length * num_envs, -1)
@@ -358,6 +381,7 @@ def train():
         
         # Episode Length (Approximate)
         # Total steps / (Total dones). If no dones, it's rollout length (or infinity).
+        done_traj = jnp.maximum(term_traj, trunc_traj)  # Either terminated or truncated
         total_dones = float(jnp.sum(done_traj))
         if total_dones > 0:
             train_eplen_avg = env_steps / total_dones
